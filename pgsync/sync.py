@@ -10,7 +10,7 @@ import sys
 import time
 import typing as t
 from collections import defaultdict
-
+import gc
 import click
 import sqlalchemy as sa
 import sqlparse
@@ -974,7 +974,7 @@ class Sync(Base, metaclass=Singleton):
             empty_char="-",
             width=50,
         ) as bar:
-            for i, (keys, row, primary_keys) in enumerate(
+            for i, (keys, row, primary_keys, last) in enumerate(
                 self.fetchmany(node._subquery)
             ):
                 bar.update(1)
@@ -1013,6 +1013,15 @@ class Sync(Base, metaclass=Singleton):
                     doc["pipeline"] = self.pipeline
 
                 yield doc
+                if last:
+                    self._post_chunk_sync()
+
+    def _post_chunk_sync(self):
+        if  settings.ELASTICSEARCH_SYNC_PAUSE == "flush":
+            self.search_client.flush(indices=[self.index])
+        elif settings.ELASTICSEARCH_SYNC_PAUSE == "refresh":
+            self.search_client.refresh(indices=[self.index])
+        gc.collect()
 
     @property
     def checkpoint(self) -> int:
